@@ -120,20 +120,26 @@ def main():
         with nvtx.annotate("Warmup", color="red"):
             print("Running warmup with 10 molecules")
             warmup_result = butina_nvmol(dist_mat[:10, :10].contiguous(), 0.2)
-            print(f"Warmup completed, found {len(warmup_result)} clusters")
+            warmup_clusters = warmup_result.torch()
+            num_warmup_clusters = len(torch.unique(warmup_clusters))
+            print(f"Warmup completed, found {num_warmup_clusters} clusters")
 
     with nvtx.annotate("Clustering", color="green"):
         print(f"Running Butina clustering: size={size}, cutoff={cutoff}")
         result = butina_nvmol(dist_mat, cutoff)
-        print(f"Clustering completed, found {len(result)} clusters")
+        print("Clustering completed")
 
     # Print cluster size distribution
-    cluster_sizes = [len(cluster) for cluster in result]
+    clusters = result.torch()
+    unique_clusters, counts = torch.unique(clusters, return_counts=True)
+    num_clusters = len(unique_clusters)
+    cluster_sizes = counts.cpu().tolist()
+
     print(f"\nCluster statistics:")
-    print(f"  Total clusters: {len(result)}")
+    print(f"  Total clusters: {num_clusters}")
     print(f"  Largest cluster: {max(cluster_sizes)}")
     print(f"  Smallest cluster: {min(cluster_sizes)}")
-    print(f"  Average cluster size: {sum(cluster_sizes) / len(result):.2f}")
+    print(f"  Average cluster size: {sum(cluster_sizes) / num_clusters:.2f}")
     print(f"  Singletons: {sum(1 for s in cluster_sizes if s == 1)}")
 
 
