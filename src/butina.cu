@@ -25,8 +25,6 @@
  * - Keep a live list of active indices and only dispatch counts for those.
  * - Parallelize singlet/doublet assignment (low priority since these only run once)
  * - Use neighborlists instead of hit matrix. This could be implemented in similarity code too.
- * - Use ArgMax from CUB instead of custom kernel. CUB API changed somewhere between 12.5 and 12.9, so we'd need a
- * compatibility layer.
  * - Use CUDA Graphs for inner loop and exit criteria.
  */
 namespace nvMolKit {
@@ -167,37 +165,45 @@ __global__ void assignSingletonIdsKernel(const cuda::std::span<int> clusters, co
   }
 }
 
-constexpr int argMaxBlockSize = 512;
+// Helper class to manage CUB temporary storage for ArgMax
+class ArgMaxTempStorage {
+public:
+  ArgMaxTempStorage(size_t num_items, cudaStream_t stream)
+      : stream_(stream), temp_storage_(nullptr), temp_storage_bytes_(0) {
+    // Determine temporary storage requirements
+    nvmolkit::detail::DeviceArgMax(nullptr,
+                                    temp_storage_bytes_,
+                                    static_cast<int*>(nullptr),
+                                    static_cast<int*>(nullptr),
+                                    static_cast<int*>(nullptr),
+                                    static_cast<int>(num_items),
+                                    stream_);
+    
+    // Allocate temporary storage
+    cudaCheckError(cudaMallocAsync(&temp_storage_, temp_storage_bytes_, stream_));
+  }
 
-//! Custom ArgMax kernel that returns the largest value and index.
-__global__ void lastArgMax(const cuda::std::span<const int> values, int* outVal, int* outIdx) {
-  int            maxVal = cuda::std::numeric_limits<int>::min();
-  int            maxID  = -1;
-  __shared__ int foundMaxVal[argMaxBlockSize];
-  __shared__ int foundMaxIds[argMaxBlockSize];
-  const auto     tid = static_cast<int>(threadIdx.x);
-  for (int i = tid; i < values.size(); i += argMaxBlockSize) {
-    if (const int val = values[i]; val >= maxVal) {
-      maxID  = i;
-      maxVal = val;
+  ~ArgMaxTempStorage() {
+    if (temp_storage_ != nullptr) {
+      cudaFreeAsync(temp_storage_, stream_);
     }
   }
-  foundMaxVal[tid] = maxVal;
-  foundMaxIds[tid] = maxID;
 
-  __shared__ cub::BlockReduce<int, argMaxBlockSize>::TempStorage storage;
-  const int actualMaxVal = cub::BlockReduce<int, argMaxBlockSize>(storage).Reduce(maxVal, cubMax());
-  __syncthreads();  // For shared memory write of maxVal and maxID
-  if (tid == 0) {
-    *outVal = actualMaxVal;
-    for (int i = argMaxBlockSize - 1; i >= 0; i--) {
-      if (foundMaxVal[i] == actualMaxVal) {
-        *outIdx = foundMaxIds[i];
-        break;
-      }
-    }
+  cudaError_t operator()(int* d_in, int* d_max_value_out, int* d_max_index_out, int num_items) {
+    return nvmolkit::detail::DeviceArgMax(temp_storage_,
+                                          temp_storage_bytes_,
+                                          d_in,
+                                          d_max_value_out,
+                                          d_max_index_out,
+                                          num_items,
+                                          stream_);
   }
-}
+
+private:
+  cudaStream_t stream_;
+  void*        temp_storage_;
+  size_t       temp_storage_bytes_;
+};
 
 // TODO - consolidate this to device vector code.
 template <typename T> __global__ void setAllKernel(const size_t numElements, T value, T* dst) {
@@ -225,13 +231,17 @@ void innerButinaLoop(const int                            numPoints,
                      const AsyncDevicePtr<int>&           maxValue,
                      const AsyncDevicePtr<int>&           clusterIdx,
                      PinnedHostVector<int>&               maxCluster,
+                     ArgMaxTempStorage&                   argMaxStorage,
                      cudaStream_t                         stream) {
   const int numBlocksFlat = ((static_cast<int>(clusterSizesSpan.size()) - 1) / blockSizeCount) + 1;
 
   butinaKernelCountClusterSize<<<numPoints, blockSizeCount, 0, stream>>>(hitMatrix, clusters, clusterSizesSpan);
   cudaCheckError(cudaGetLastError());
-  lastArgMax<<<1, argMaxBlockSize, 0, stream>>>(clusterSizesSpan, maxValue.data(), maxIndex.data());
-  cudaCheckError(cudaGetLastError());
+  
+  // Use CUB's ArgMax to find the cluster with maximum size
+  cudaCheckError(argMaxStorage(clusterSizesSpan.data(), maxValue.data(), maxIndex.data(), 
+                                static_cast<int>(clusterSizesSpan.size())));
+  
   butinaWriteClusterValue<<<numBlocksFlat, blockSizeCount, 0, stream>>>(hitMatrix,
                                                                         clusters,
                                                                         maxIndex.data(),
@@ -264,6 +274,10 @@ void butinaGpu(const cuda::std::span<const uint8_t> hitMatrix,
   const AsyncDevicePtr<int> clusterIdx(0, stream);
   PinnedHostVector<int>     maxCluster(1);
   maxCluster[0] = std::numeric_limits<int>::max();
+  
+  // Create ArgMax temporary storage (reused across iterations)
+  ArgMaxTempStorage argMaxStorage(clusters.size(), stream);
+  
   setupRange.pop();
   const auto clusterSizesSpan = toSpan(clusterSizes);
 
@@ -277,6 +291,7 @@ void butinaGpu(const cuda::std::span<const uint8_t> hitMatrix,
                     maxValue,
                     clusterIdx,
                     maxCluster,
+                    argMaxStorage,
                     stream);
   }
   pairDoubletKernels<<<numPoints, blockSizeCount, 0, stream>>>(hitMatrix, clusters, clusterSizesSpan);
