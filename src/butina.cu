@@ -201,9 +201,9 @@ __global__ void lastArgMax(const cuda::std::span<const int> values, int* outVal,
 
 // Helper class to manage CUDA Graph for the inner Butina loop
 class ButinaGraphManager {
-public:
+ public:
   ButinaGraphManager() : graph_(nullptr), graphExec_(nullptr), isCapturing_(false) {}
-  
+
   ~ButinaGraphManager() {
     if (graphExec_ != nullptr) {
       cudaGraphExecDestroy(graphExec_);
@@ -212,38 +212,38 @@ public:
       cudaGraphDestroy(graph_);
     }
   }
-  
+
   // Disable copy and move
-  ButinaGraphManager(const ButinaGraphManager&) = delete;
+  ButinaGraphManager(const ButinaGraphManager&)            = delete;
   ButinaGraphManager& operator=(const ButinaGraphManager&) = delete;
-  ButinaGraphManager(ButinaGraphManager&&) = delete;
-  ButinaGraphManager& operator=(ButinaGraphManager&&) = delete;
-  
+  ButinaGraphManager(ButinaGraphManager&&)                 = delete;
+  ButinaGraphManager& operator=(ButinaGraphManager&&)      = delete;
+
   void beginCapture(cudaStream_t stream) {
     cudaCheckError(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
     isCapturing_ = true;
   }
-  
+
   void endCaptureAndInstantiate(cudaStream_t stream) {
     cudaCheckError(cudaStreamEndCapture(stream, &graph_));
     isCapturing_ = false;
     cudaCheckError(cudaGraphInstantiate(&graphExec_, graph_, nullptr, nullptr, 0));
   }
-  
+
   void launch(cudaStream_t stream) const {
     if (graphExec_ == nullptr) {
       throw std::runtime_error("Cannot launch graph: graph not instantiated");
     }
     cudaCheckError(cudaGraphLaunch(graphExec_, stream));
   }
-  
+
   bool isInstantiated() const { return graphExec_ != nullptr; }
   bool isCapturing() const { return isCapturing_; }
-  
-private:
-  cudaGraph_t graph_;
+
+ private:
+  cudaGraph_t     graph_;
   cudaGraphExec_t graphExec_;
-  bool isCapturing_;
+  bool            isCapturing_;
 };
 
 // TODO - consolidate this to device vector code.
@@ -282,7 +282,7 @@ void innerButinaLoop(const int                            numPoints,
   } else {
     // First iteration: capture the graph
     graphManager.beginCapture(stream);
-    
+
     butinaKernelCountClusterSize<<<numPoints, blockSizeCount, 0, stream>>>(hitMatrix, clusters, clusterSizesSpan);
     lastArgMax<<<1, argMaxBlockSize, 0, stream>>>(clusterSizesSpan, maxValue.data(), maxIndex.data());
     butinaWriteClusterValue<<<numBlocksFlat, blockSizeCount, 0, stream>>>(hitMatrix,
@@ -292,12 +292,12 @@ void innerButinaLoop(const int                            numPoints,
                                                                           maxValue.data());
     bumpClusterIdxKernel<<<1, 1, 0, stream>>>(clusterIdx.data(), maxValue.data());
     cudaMemcpyAsync(maxCluster.data(), maxValue.data(), sizeof(int), cudaMemcpyDefault, stream);
-    
+
     graphManager.endCaptureAndInstantiate(stream);
-    
+
     // Note: We don't need cudaCheckError during capture since errors will be caught during instantiation
   }
-  
+
   cudaStreamSynchronize(stream);
 }
 
@@ -321,10 +321,10 @@ void butinaGpu(const cuda::std::span<const uint8_t> hitMatrix,
   const AsyncDevicePtr<int> clusterIdx(0, stream);
   PinnedHostVector<int>     maxCluster(1);
   maxCluster[0] = std::numeric_limits<int>::max();
-  
+
   // Create graph manager for the inner loop
   ButinaGraphManager graphManager;
-  
+
   setupRange.pop();
   const auto clusterSizesSpan = toSpan(clusterSizes);
 
