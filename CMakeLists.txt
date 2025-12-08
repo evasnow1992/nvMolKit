@@ -24,29 +24,45 @@ set(CMAKE_CXX_STANDARD 20)
 find_package(CUDAToolkit REQUIRED)
 
 find_package(CCCL QUIET)
-if(CCCL_FOUND AND CCCL_VERSION VERSION_GREATER_EQUAL "3.0.0")
-  message(STATUS "CCCL ${CCCL_VERSION} found, using CCCL::CCCL")
-  # Create alias to use the real CCCL target
-  add_library(cccl_interface INTERFACE)
-  target_link_libraries(cccl_interface INTERFACE CCCL::CCCL)
-  # Define preprocessor macro to indicate CCCL >= 3.0.0 is available
-  target_compile_definitions(cccl_interface INTERFACE NVMOLKIT_HAS_CCCL_GE_3=1)
-else()
-  if(CCCL_FOUND)
-    message(STATUS "CCCL ${CCCL_VERSION} found but version < 3.0.0")
+
+# Create the cccl_interface library
+add_library(cccl_interface INTERFACE)
+
+if(CCCL_FOUND)
+  # Parse CCCL version into numeric macro: MAJOR * 10000 + MINOR * 100 + PATCH
+  # Example: 2.8.0 -> 20800, 3.0.0 -> 30000
+  string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" CCCL_VERSION_MATCH "${CCCL_VERSION}")
+  if(CCCL_VERSION_MATCH)
+    set(CCCL_VERSION_MAJOR ${CMAKE_MATCH_1})
+    set(CCCL_VERSION_MINOR ${CMAKE_MATCH_2})
+    set(CCCL_VERSION_PATCH ${CMAKE_MATCH_3})
+    math(EXPR CCCL_VERSION_NUMERIC "${CCCL_VERSION_MAJOR} * 10000 + ${CCCL_VERSION_MINOR} * 100 + ${CCCL_VERSION_PATCH}")
+    
+    # Only link CCCL::CCCL if version >= 3.0.0
+    if(CCCL_VERSION VERSION_GREATER_EQUAL "3.0.0")
+      message(STATUS "CCCL ${CCCL_VERSION} found (numeric: ${CCCL_VERSION_NUMERIC}), using CCCL::CCCL")
+      target_link_libraries(cccl_interface INTERFACE CCCL::CCCL)
+    else()
+      message(STATUS "CCCL ${CCCL_VERSION} found (numeric: ${CCCL_VERSION_NUMERIC}) but version < 3.0.0")
+      if(CMAKE_PREFIX_PATH)
+        message(STATUS "CMAKE_PREFIX_PATH is set - CCCL ${CCCL_VERSION} headers may be used from PREFIX path")
+      else()
+        message(STATUS "Using bundled CUDA headers")
+      endif()
+    endif()
+    
+    # Define numeric version macro that can be compared in code
+    target_compile_definitions(cccl_interface INTERFACE NVMOLKIT_CCCL_VERSION=${CCCL_VERSION_NUMERIC})
+  else()
+    message(WARNING "Could not parse CCCL version: ${CCCL_VERSION}")
     if(CMAKE_PREFIX_PATH)
-      message(
-        STATUS
-          "CMAKE_PREFIX_PATH is set - CCCL ${CCCL_VERSION} headers may be used from PREFIX path"
-      )
+      message(STATUS "CMAKE_PREFIX_PATH is set - CCCL headers may be used from PREFIX path")
     else()
       message(STATUS "Using bundled CUDA headers")
     endif()
-  else()
-    message(STATUS "CCCL not found, using bundled CUDA headers")
   endif()
-  # Create empty interface library as fallback
-  add_library(cccl_interface INTERFACE)
+else()
+  message(STATUS "CCCL not found, using bundled CUDA headers")
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake")
