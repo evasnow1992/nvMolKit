@@ -95,23 +95,31 @@ def bench_nvmol_inner(data, threshold, neighborlist_max_size):
     butina_nvmol(data, threshold, neighborlist_max_size=neighborlist_max_size)
     torch.cuda.synchronize()
 
-MAX_BENCH_SIZE = 40000
+DEFAULT_INPUT_FILE = "benchmarks/data/chembl_10k.smi"
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python butina_clustering_bench.py <input_smiles_file> <do_rdkit (0 or 1)>")
+    if len(sys.argv) < 2:
+        print("Usage: python butina_clustering_bench.py <do_rdkit (0 or 1)> [input_smiles_file]")
+        print(f"  Default input file: {DEFAULT_INPUT_FILE}")
         sys.exit(1)
-    input_data = sys.argv[1]
-    do_rdkit = sys.argv[2] != "0"
+    do_rdkit = sys.argv[1] != "0"
+    input_data = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_INPUT_FILE
 
+    print(f"Loading molecules from {input_data}")
     with open(input_data, "r") as f:
         smis = [line.strip() for line in f.readlines()]
-    mols = [MolFromSmiles(smi, sanitize=True) for smi in smis[:MAX_BENCH_SIZE + 100]]
+    mols = [MolFromSmiles(smi, sanitize=True) for smi in smis]
     mols = [mol for mol in mols if mol is not None]
+    max_size = len(mols)
+    print(f"Loaded {max_size} valid molecules")
 
     dists = get_distance_matrix(mols)
 
-    sizes = [1000, 5000, 10000, 20000, 30000, 40000]
+    # Only use sizes that fit within the available data (no padding)
+    all_sizes = [1000, 2000, 5000, 9000]
+    sizes = [s for s in all_sizes if s <= max_size]
+    print(f"Will benchmark sizes: {sizes}")
+
     cutoffs = [1e-10, 0.1, 0.2, 0.35, 1.1]
     max_nl_sizes = [8, 16, 32, 64, 128]
     results = []
@@ -120,9 +128,6 @@ if __name__ == "__main__":
         for size in sizes:
             for cutoff in cutoffs:
                     for max_nl in max_nl_sizes:
-                        # Don't run large sizes for edge cases.
-                        if cutoff in (1e-10, 1.1) and size > 20000:
-                            continue
                         print(f"Running size {size} cutoff {cutoff} max_nl {max_nl}")
                         dist_mat = resize_and_fill(dists, size)
                         if do_rdkit:
@@ -155,3 +160,20 @@ if __name__ == "__main__":
     df = pd.DataFrame(results)
     print(df)
     df.to_csv("results.csv", index=False)
+
+    # Generate speedup summary table (best speedup per size/cutoff combination)
+    if do_rdkit and len(results) > 0:
+        df["speedup"] = df["rdkit_time_ms"] / df["nvmol_time_ms"]
+
+        # For each (size, cutoff), find the row with maximum speedup
+        idx = df.groupby(["size", "cutoff"])["speedup"].idxmax()
+        best_df = df.loc[idx, ["size", "cutoff", "speedup", "max_neighborlist_size"]].copy()
+        best_df = best_df.rename(columns={"max_neighborlist_size": "best_neighborlist_size"})
+        best_df = best_df.sort_values(["size", "cutoff"]).reset_index(drop=True)
+
+        print("\n" + "=" * 60)
+        print("SPEEDUP SUMMARY (max speedup per size/cutoff)")
+        print("=" * 60)
+        print(best_df.to_string(index=False))
+        best_df.to_csv("speedup_summary.csv", index=False)
+        print("\nSpeedup summary saved to speedup_summary.csv")
