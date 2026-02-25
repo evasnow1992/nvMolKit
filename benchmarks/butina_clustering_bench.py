@@ -72,7 +72,7 @@ def resize_and_fill(distance_mat: torch.Tensor, want_size):
     return full_mat
 
 
-def time_it(func, runs=1, warmups=1):
+def time_it(func, runs=3, warmups=1):
     import time
 
     for _ in range(warmups):
