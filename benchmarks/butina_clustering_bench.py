@@ -116,11 +116,11 @@ if __name__ == "__main__":
     dists = get_distance_matrix(mols)
 
     # Only use sizes that fit within the available data (no padding)
-    all_sizes = [1000, 2000, 5000, 9000]
+    all_sizes = [5000, 10000, 20000, 30000, 40000, 50000, 60000]
     sizes = [s for s in all_sizes if s <= max_size]
     print(f"Will benchmark sizes: {sizes}")
 
-    cutoffs = [1e-10, 0.1, 0.2, 0.35, 1.1]
+    cutoffs = [0.1, 0.2, 0.35]
     max_nl_sizes = [8, 16, 32, 64, 128]
     results = []
 
