@@ -72,7 +72,7 @@ def resize_and_fill(distance_mat: torch.Tensor, want_size):
     return full_mat
 
 
-def time_it(func, runs=3, warmups=1):
+def time_it(func, runs=1, warmups=1):
     import time
 
     for _ in range(warmups):
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     dists = get_distance_matrix(mols)
 
     # Only use sizes that fit within the available data (no padding)
-    all_sizes = [5000, 10000, 20000, 30000, 40000, 50000, 60000]
+    all_sizes = [5000, 10000, 20000, 30000, 40000, 50000]
     sizes = [s for s in all_sizes if s <= max_size]
     print(f"Will benchmark sizes: {sizes}")
 

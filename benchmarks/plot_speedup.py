@@ -20,6 +20,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 CUTOFFS = [0.1, 0.2, 0.35]
+# One color family per file (same file = similar colors); cutoff low→high = light→dark
+CMAP_FAMILIES = [plt.cm.Reds, plt.cm.Blues, plt.cm.Greens, plt.cm.Oranges, plt.cm.Purples]
+CUTOFF_SHADES = (0.35, 0.55, 0.85)  # light, mid, dark
 
 
 def suffix_from_filename(path: str, index: int) -> str:
@@ -46,30 +49,26 @@ def main():
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    n_files = len(paths)
-    n_curves = n_files * len(CUTOFFS)
-    colors = plt.cm.viridis([i / max(n_curves - 1, 1) for i in range(n_curves)])
-    idx = 0
-
     for file_index, path in enumerate(paths):
         suffix = suffix_from_filename(path, file_index)
         df = pd.read_csv(path)
         df = df[df["cutoff"].isin(CUTOFFS)]
+        cmap = CMAP_FAMILIES[file_index % len(CMAP_FAMILIES)]
 
-        for cutoff in CUTOFFS:
+        for i, cutoff in enumerate(CUTOFFS):
             subset = df[df["cutoff"] == cutoff].sort_values("size")
             if len(subset) == 0:
                 continue
+            color = cmap(CUTOFF_SHADES[min(i, len(CUTOFF_SHADES) - 1)])
             label = f"cutoff={cutoff} ({suffix})"
             ax.plot(
                 subset["size"],
                 subset["speedup"],
                 marker="o",
                 label=label,
-                color=colors[idx],
+                color=color,
                 linewidth=2,
             )
-            idx += 1
 
     ax.set_xlabel("Dataset Size (molecules)", fontsize=12)
     ax.set_ylabel("Speedup (RDKit / nvMolKit)", fontsize=12)
