@@ -810,8 +810,8 @@ __global__ void scaleGradKernel(const int16_t* statuses,
 
   for (int i = idxWithinSystem; i < numTerms; i += blockDim.x) {
     localGrad[i] *= gradScale;
-    if (localGrad[i] > maxGrad) {
-      maxGrad = localGrad[i];
+    if (fabs(localGrad[i]) > maxGrad) {
+      maxGrad = fabs(localGrad[i]);
     }
   }
 

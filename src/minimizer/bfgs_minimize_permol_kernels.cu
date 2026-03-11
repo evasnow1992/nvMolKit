@@ -225,8 +225,8 @@ __device__ void scaleGrad(const int                                             
     if constexpr (scaleGrads) {
       grad[i] *= gradScale;
     }
-    if (grad[i] > maxGrad) {
-      maxGrad = grad[i];
+    if (fabs(grad[i]) > maxGrad) {
+      maxGrad = fabs(grad[i]);
     }
   }
 
