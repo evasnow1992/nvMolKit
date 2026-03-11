@@ -47,79 +47,48 @@ unsigned int twoBitCellPos(unsigned int nAtoms, int i, int j) {
   if (j < i) {
     std::swap(i, j);
   }
-  return i * (nAtoms - 1) + i * (1 - i) / 2 + j;
+  return i * (nAtoms - 1) - (i - 1) * i / 2 + j;
 }
 
 void setTwoBitCell(std::vector<std::uint8_t>& res, unsigned int pos, std::uint8_t value) {
-  unsigned int twoBitPos  = pos / 4;
-  unsigned int shift      = 2 * (pos % 4);
-  std::uint8_t twoBitMask = 3 << shift;
-  res[twoBitPos]          = ((res[twoBitPos] & (~twoBitMask)) | (value << shift));
+  res[pos] = value;
 }
 
 std::uint8_t getTwoBitCell(const std::vector<std::uint8_t>& res, unsigned int pos) {
-  unsigned int twoBitPos  = pos / 4;
-  unsigned int shift      = 2 * (pos % 4);
-  std::uint8_t twoBitMask = 3 << shift;
-  return ((res[twoBitPos] & twoBitMask) >> shift);
+  return res[pos];
 }
 
 // ------------------------------------------------------------------------
 //
-// the two-bit matrix returned by this contains:
-//   0: if atoms i and j are directly connected
-//   1: if atoms i and j are connected via an atom
+// the matrix returned by this contains:
+//   0: if atoms i and j are directly connected (1,2)
+//   1: if atoms i and j are connected via an atom (1,3)
 //   2: if atoms i and j are in a 1,4 relationship
 //   3: otherwise
 //
-//  NOTE: the caller is responsible for calling delete []
-//  on the result
+// Uses topological distance matrix, matching RDKit 2025.09 behavior.
 //
 // ------------------------------------------------------------------------
 std::vector<std::uint8_t> buildNeighborMatrixInternal(const ROMol& mol) {
-  const std::uint8_t RELATION_1_X_INIT = RELATION_1_X | (RELATION_1_X << 2) | (RELATION_1_X << 4) | (RELATION_1_X << 6);
-  unsigned int       nAtoms            = mol.getNumAtoms();
-  unsigned           nTwoBitCells      = (nAtoms * (nAtoms + 1) - 1) / 8 + 1;
-  std::vector<std::uint8_t> res(nTwoBitCells, RELATION_1_X_INIT);
-  for (ROMol::ConstBondIterator bondi = mol.beginBonds(); bondi != mol.endBonds(); ++bondi) {
-    setTwoBitCell(res, twoBitCellPos(nAtoms, (*bondi)->getBeginAtomIdx(), (*bondi)->getEndAtomIdx()), RELATION_1_2);
-    unsigned int bondiBeginAtomIdx = (*bondi)->getBeginAtomIdx();
-    unsigned int bondiEndAtomIdx   = (*bondi)->getEndAtomIdx();
-    for (ROMol::ConstBondIterator bondj = bondi; ++bondj != mol.endBonds();) {
-      int          idx1              = -1;
-      int          idx3              = -1;
-      unsigned int bondjBeginAtomIdx = (*bondj)->getBeginAtomIdx();
-      unsigned int bondjEndAtomIdx   = (*bondj)->getEndAtomIdx();
-      if (bondiBeginAtomIdx == bondjBeginAtomIdx) {
-        idx1 = bondiEndAtomIdx;
-        idx3 = bondjEndAtomIdx;
-      } else if (bondiBeginAtomIdx == bondjEndAtomIdx) {
-        idx1 = bondiEndAtomIdx;
-        idx3 = bondjBeginAtomIdx;
-      } else if (bondiEndAtomIdx == bondjBeginAtomIdx) {
-        idx1 = bondiBeginAtomIdx;
-        idx3 = bondjEndAtomIdx;
-      } else if (bondiEndAtomIdx == bondjEndAtomIdx) {
-        idx1 = bondiBeginAtomIdx;
-        idx3 = bondjBeginAtomIdx;
-      } else {
-        // check if atoms i and j are in a 1,4-relationship
-        if ((mol.getBondBetweenAtoms(bondiBeginAtomIdx, bondjBeginAtomIdx)) &&
-            (getTwoBitCell(res, twoBitCellPos(nAtoms, bondiEndAtomIdx, bondjEndAtomIdx)) == RELATION_1_X)) {
-          setTwoBitCell(res, twoBitCellPos(nAtoms, bondiEndAtomIdx, bondjEndAtomIdx), RELATION_1_4);
-        } else if ((mol.getBondBetweenAtoms(bondiBeginAtomIdx, bondjEndAtomIdx)) &&
-                   (getTwoBitCell(res, twoBitCellPos(nAtoms, bondiEndAtomIdx, bondjBeginAtomIdx)) == RELATION_1_X)) {
-          setTwoBitCell(res, twoBitCellPos(nAtoms, bondiEndAtomIdx, bondjBeginAtomIdx), RELATION_1_4);
-        } else if ((mol.getBondBetweenAtoms(bondiEndAtomIdx, bondjBeginAtomIdx)) &&
-                   (getTwoBitCell(res, twoBitCellPos(nAtoms, bondiBeginAtomIdx, bondjEndAtomIdx)) == RELATION_1_X)) {
-          setTwoBitCell(res, twoBitCellPos(nAtoms, bondiBeginAtomIdx, bondjEndAtomIdx), RELATION_1_4);
-        } else if ((mol.getBondBetweenAtoms(bondiEndAtomIdx, bondjEndAtomIdx)) &&
-                   (getTwoBitCell(res, twoBitCellPos(nAtoms, bondiBeginAtomIdx, bondjBeginAtomIdx)) == RELATION_1_X)) {
-          setTwoBitCell(res, twoBitCellPos(nAtoms, bondiBeginAtomIdx, bondjBeginAtomIdx), RELATION_1_4);
-        }
-      }
-      if (idx1 > -1) {
-        setTwoBitCell(res, twoBitCellPos(nAtoms, idx1, idx3), RELATION_1_3);
+  unsigned int              nAtoms = mol.getNumAtoms();
+  unsigned                  nCells = nAtoms * (nAtoms + 1) / 2;
+  std::vector<std::uint8_t> res(nCells, RELATION_1_X);
+
+  constexpr bool useBO      = false;
+  constexpr bool useAtomWts = false;
+  auto           dmat       = MolOps::getDistanceMat(mol, useBO, useAtomWts);
+  for (unsigned int i = 0; i < nAtoms; ++i) {
+    setTwoBitCell(res, twoBitCellPos(nAtoms, i, i), RELATION_1_X);
+    for (unsigned int j = i + 1; j < nAtoms; ++j) {
+      double dist = dmat[i * nAtoms + j];
+      if (dist == 1.0) {
+        setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_2);
+      } else if (dist == 2.0) {
+        setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_3);
+      } else if (dist == 3.0) {
+        setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_4);
+      } else if (dist < 1e7) {
+        setTwoBitCell(res, twoBitCellPos(nAtoms, i, j), RELATION_1_X);
       }
     }
   }
