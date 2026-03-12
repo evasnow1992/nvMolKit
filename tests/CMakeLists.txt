@@ -213,21 +213,23 @@ target_link_libraries(
                              ${RDKit_LIBS})
 
 add_executable(test_graph_labeler_recursive test_graph_labeler_recursive.cu)
-target_link_libraries(test_graph_labeler_recursive PRIVATE substructure_search
-        molecules device
-        substruct_validation
-        ${RDKit_LIBS})
+target_link_libraries(
+  test_graph_labeler_recursive PRIVATE substructure_search molecules device
+                                       substruct_validation ${RDKit_LIBS})
 
 add_executable(test_minibatch_planner test_minibatch_planner.cpp)
-target_link_libraries(test_minibatch_planner PRIVATE substructure_search molecules ${RDKit_LIBS})
+target_link_libraries(test_minibatch_planner PRIVATE substructure_search
+                                                     molecules ${RDKit_LIBS})
 
 add_executable(test_recursive_preprocessor test_recursive_preprocessor.cu)
-target_link_libraries(test_recursive_preprocessor PRIVATE substructure_search molecules device ${RDKit_LIBS})
+target_link_libraries(
+  test_recursive_preprocessor PRIVATE substructure_search molecules device
+                                      ${RDKit_LIBS})
 
 add_executable(test_substructure_search test_substruct_search.cu)
 target_link_libraries(
-        test_substructure_search PRIVATE substructure_search molecules device
-        substruct_validation ${RDKit_LIBS})
+  test_substructure_search PRIVATE substructure_search molecules device
+                                   substruct_validation ${RDKit_LIBS})
 
 add_executable(test_substruct_algos test_substruct_algos.cu)
 target_link_libraries(
@@ -236,14 +238,20 @@ target_link_libraries(
 
 add_executable(test_substructure_integration test_substruct_integration.cu)
 target_link_libraries(
-        test_substructure_integration PRIVATE substructure_search molecules device
-        substruct_validation test_utils molData
-        ${RDKit_LIBS})
+  test_substructure_integration
+  PRIVATE substructure_search
+          molecules
+          device
+          substruct_validation
+          test_utils
+          molData
+          ${RDKit_LIBS})
 
-add_executable(test_substruct_label_integration test_substruct_label_integration.cu)
+add_executable(test_substruct_label_integration
+               test_substruct_label_integration.cu)
 target_link_libraries(
-        test_substruct_label_integration PRIVATE substructure_search molecules device
-        test_utils molData ${RDKit_LIBS})
+  test_substruct_label_integration PRIVATE substructure_search molecules device
+                                           test_utils molData ${RDKit_LIBS})
 
 add_executable(test_tfd_cpu test_tfd_cpu.cpp)
 target_link_libraries(test_tfd_cpu PRIVATE ${RDKit_LIBS} tfd_cpu test_utils)
@@ -254,8 +262,12 @@ target_link_libraries(
                            test_utils)
 
 add_executable(test_tfd_gpu test_tfd_gpu.cpp)
-target_link_libraries(test_tfd_gpu PRIVATE ${RDKit_LIBS} tfd device_vector
+target_link_libraries(test_tfd_gpu PRIVATE ${RDKit_LIBS} tfd_gpu device_vector
                                            test_utils)
+
+add_executable(test_tfd test_tfd.cpp)
+target_link_libraries(test_tfd PRIVATE ${RDKit_LIBS} tfd device_vector
+                                       test_utils)
 
 set(TEST_LIST
     test_boolean_tree
@@ -264,6 +276,7 @@ set(TEST_LIST
     test_tfd_cpu
     test_tfd_kernels
     test_tfd_gpu
+    test_tfd
     test_openmp_helpers
     test_conformer_checkers
     test_coordgen
