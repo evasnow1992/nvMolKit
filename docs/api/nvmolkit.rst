@@ -86,6 +86,16 @@ Conformer RMSD
    conformerRmsd.GetConformerRMSMatrix
    conformerRmsd.GetConformerRMSMatrixBatch
 
+Torsion Fingerprint Deviation (TFD)
+-----------------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :template: function_template.rst
+
+   tfd.GetTFDMatrix
+   tfd.GetTFDMatrices
+
 Types
 -----
 
